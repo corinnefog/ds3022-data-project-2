@@ -4,6 +4,7 @@ import requests
 import time
 from prefect import flow, task
 
+
 uvaid = "qfr4cu"
 api_url = f"https://j9y2xa0vx0.execute-api.us-east-1.amazonaws.com/api/scatter/{uvaid}"
 submit_queue_url = "https://sqs.us-east-1.amazonaws.com/440848399208/dp2-submit"
@@ -39,10 +40,12 @@ def get_queue_attributes(queue_url):
         )
         attributes = response.get('Attributes', {})
         
+        #Know where the messages are in the queue
         visible = int(attributes.get('ApproximateNumberOfMessages', 0))
         not_visible = int(attributes.get('ApproximateNumberOfMessagesNotVisible', 0))
         delayed = int(attributes.get('ApproximateNumberOfMessagesDelayed', 0))
         
+        #Calculate total messages
         total = visible + not_visible + delayed
         
         print(f"Visible: {visible}, Not Visible: {not_visible}, Delayed: {delayed}, Total: {total}")
@@ -62,6 +65,7 @@ def get_queue_attributes(queue_url):
 def get_messages(queue_url, expected_count=21):
     all_messages = []
     
+    #keep getting messages until we have the expected count
     while len(all_messages) < expected_count:
         queue_stats = get_queue_attributes.fn(queue_url)
         
@@ -76,6 +80,7 @@ def get_messages(queue_url, expected_count=21):
             time.sleep(5)
             continue
         
+        # Poll for messages
         try:
             response = sqs.receive_message(
                 QueueUrl=queue_url,
@@ -92,17 +97,20 @@ def get_messages(queue_url, expected_count=21):
             
             print(f"Received {len(messages)} messages")
             
+            # Process each message
             for message in messages:
                 try:
                     receipt_handle = message['ReceiptHandle']
                     attrs = message.get('MessageAttributes', {})
                     
+                    #Extract needed number and word
                     order_no = attrs['order_no']['StringValue']
                     word = attrs['word']['StringValue']
                     
                     all_messages.append({'order_no': order_no, 'word': word})
                     print(f"  Parsed: order_no={order_no}, word={word}")
                     
+                    #Delete message from queue
                     sqs.delete_message(
                         QueueUrl=queue_url,
                         ReceiptHandle=receipt_handle
@@ -118,6 +126,7 @@ def get_messages(queue_url, expected_count=21):
     print(f"Total messages collected: {len(all_messages)}")
     return all_messages
 
+# Helper function to extract order_no as integer
 def order_no(message):
     return int(message['order_no'])
 
@@ -126,6 +135,7 @@ def reorder_messages(messages):
     try:
         sorted_messages = sorted(messages, key=order_no)
         
+        # For debugging, print the order sequence
         order_sequence = [msg['order_no'] for msg in sorted_messages]
         print(f"Order sequence: {order_sequence}")
         
@@ -138,6 +148,7 @@ def reorder_messages(messages):
 @task
 def create_phrase(sorted_messages):
     try:
+        # Concatenate words in order to form the phrase
         words = [msg.get('word', '') for msg in sorted_messages]
         phrase = ' '.join(words)
         
@@ -153,6 +164,7 @@ def send_solution(uvaid, phrase, platform):
     try:
         message_body = "Solution Message from Prefect Flow"
         
+        # Send the message to the submission queue
         response = sqs.send_message(
             QueueUrl=submit_queue_url,
             MessageBody=message_body,
@@ -173,6 +185,7 @@ def send_solution(uvaid, phrase, platform):
         )
         
         print(f"Submission Response: {response}")
+        # Log the HTTP status code
         print(f"HTTP Status: {response['ResponseMetadata']['HTTPStatusCode']}")
         
         return response
