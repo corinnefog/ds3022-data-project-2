@@ -22,11 +22,13 @@ default_args = {
 
 def trigger_api(url=api_url, **kwargs):
     try:
+        # Trigger the API to get the SQS queue URL
         response = requests.post(url)
         response.raise_for_status()
         payload = response.json()
         print(f"API connection triggered: {payload}")
         
+        # Extract the SQS queue URL from the response
         my_queue_url = payload.get('sqs_url')
         print(f"My queue URL: {my_queue_url}")
         kwargs['ti'].xcom_push(key='queue_url', value=my_queue_url)
@@ -102,6 +104,7 @@ def get_messages(expected_count=21, **kwargs):
                 WaitTimeSeconds=5
             )
             
+            # Check if any messages were received
             messages = response.get('Messages', [])
             if not messages:
                 print("No messages in this poll, waiting...")
@@ -222,7 +225,7 @@ with DAG(
     'sqs_puzzle_solver',
     default_args=default_args,
     description='Solve SQS puzzle by collecting and reassembling messages',
-    schedule=None,  # Manual trigger only
+    schedule=None,  
     catchup=False,
     tags=['sqs', 'puzzle', 'dp2'],
 )as dag:
